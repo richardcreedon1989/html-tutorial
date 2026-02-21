@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Receipt CSV Exporter</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -14,7 +15,6 @@
       min-height: 100vh;
     }
 
-    /* ── Header ── */
     header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #fff;
@@ -27,44 +27,17 @@
     header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.3px; }
     header span { font-size: 1.8rem; }
 
-    /* ── Layout ── */
+    .notice {
+      background: #e8f4fd;
+      border-left: 4px solid #3498db;
+      padding: 12px 20px;
+      font-size: .85rem;
+      color: #1a5276;
+    }
+    .notice strong { color: #1a5276; }
+
     .container { max-width: 1100px; margin: 0 auto; padding: 28px 16px; }
 
-    /* ── API Key card ── */
-    .api-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 24px;
-      box-shadow: 0 1px 6px rgba(0,0,0,.08);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .api-card label { font-weight: 600; font-size: .9rem; color: #555; white-space: nowrap; }
-    .api-card input {
-      flex: 1;
-      min-width: 260px;
-      padding: 9px 13px;
-      border: 1.5px solid #ddd;
-      border-radius: 8px;
-      font-size: .9rem;
-      font-family: monospace;
-      outline: none;
-      transition: border-color .2s;
-    }
-    .api-card input:focus { border-color: #667eea; }
-    .api-status {
-      font-size: .8rem;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-weight: 600;
-    }
-    .api-status.set   { background: #d4edda; color: #155724; }
-    .api-status.unset { background: #f8d7da; color: #721c24; }
-
-    /* ── Upload zone ── */
     .upload-zone {
       background: #fff;
       border: 2.5px dashed #c0c7e0;
@@ -87,7 +60,6 @@
     .upload-zone h2 { font-size: 1.15rem; color: #444; margin-bottom: 6px; }
     .upload-zone p  { font-size: .85rem; color: #888; }
 
-    /* ── Processing queue ── */
     #queue-section { margin-bottom: 28px; }
     .queue-item {
       background: #fff;
@@ -109,6 +81,19 @@
     .queue-info { flex: 1; min-width: 0; }
     .queue-name { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .queue-status { font-size: .8rem; color: #888; margin-top: 3px; }
+    .progress-bar {
+      height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      border-radius: 2px;
+      transition: width .2s;
+    }
     .spinner {
       width: 20px; height: 20px;
       border: 3px solid #e0e0e0;
@@ -118,10 +103,9 @@
       flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .status-done   { color: #28a745; font-size: 1.3rem; }
-    .status-error  { color: #dc3545; font-size: 1.3rem; }
+    .status-done  { color: #28a745; font-size: 1.3rem; }
+    .status-error { color: #dc3545; font-size: 1.3rem; }
 
-    /* ── Toolbar ── */
     .toolbar {
       display: flex;
       align-items: center;
@@ -151,7 +135,6 @@
     .btn-danger  { background: #dc3545; color: #fff; }
     .btn-sm { padding: 5px 11px; font-size: .78rem; }
 
-    /* ── Category tabs ── */
     .cat-tabs {
       display: flex;
       gap: 8px;
@@ -181,18 +164,13 @@
     }
     .cat-tab:not(.active) .cat-badge { background: #f0f0f0; }
 
-    /* ── Receipts table ── */
     .table-wrap {
       background: #fff;
       border-radius: 12px;
       box-shadow: 0 1px 6px rgba(0,0,0,.08);
       overflow-x: auto;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: .88rem;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
     thead { background: #f8f9fd; }
     th {
       padding: 13px 16px;
@@ -222,33 +200,22 @@
       white-space: nowrap;
     }
     .total-cell { font-weight: 700; color: #333; }
-    .thumb-cell img {
-      width: 44px; height: 44px;
-      object-fit: cover;
-      border-radius: 6px;
-      border: 1px solid #eee;
-    }
+    .thumb-cell img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
     .items-cell { max-width: 260px; font-size: .8rem; color: #666; }
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      color: #aaa;
-    }
+    .empty-state { text-align: center; padding: 60px 20px; color: #aaa; }
     .empty-state .empty-icon { font-size: 3rem; margin-bottom: 12px; }
     .empty-state p { font-size: .9rem; }
 
-    /* ── Category colours ── */
-    .cat-Groceries      { background: #d4edda; color: #155724; }
-    .cat-Dining         { background: #fff3cd; color: #856404; }
-    .cat-Transport      { background: #d1ecf1; color: #0c5460; }
-    .cat-Shopping       { background: #e2d9f3; color: #432874; }
-    .cat-Health         { background: #f8d7da; color: #721c24; }
-    .cat-Entertainment  { background: #fdebd0; color: #784212; }
-    .cat-Utilities      { background: #d6eaf8; color: #1a5276; }
-    .cat-Travel         { background: #d5f5e3; color: #1e8449; }
-    .cat-Other          { background: #eee;    color: #555; }
+    .cat-Groceries     { background: #d4edda; color: #155724; }
+    .cat-Dining        { background: #fff3cd; color: #856404; }
+    .cat-Transport     { background: #d1ecf1; color: #0c5460; }
+    .cat-Shopping      { background: #e2d9f3; color: #432874; }
+    .cat-Health        { background: #f8d7da; color: #721c24; }
+    .cat-Entertainment { background: #fdebd0; color: #784212; }
+    .cat-Utilities     { background: #d6eaf8; color: #1a5276; }
+    .cat-Travel        { background: #d5f5e3; color: #1e8449; }
+    .cat-Other         { background: #eee;    color: #555; }
 
-    /* ── Toast ── */
     #toast {
       position: fixed;
       bottom: 24px; right: 24px;
@@ -276,14 +243,11 @@
   <h1>Receipt CSV Exporter</h1>
 </header>
 
-<div class="container">
+<div class="notice">
+  <strong>Free OCR mode</strong> — uses Tesseract.js in your browser. No API key or internet account needed. Works best on clear, printed receipts.
+</div>
 
-  <!-- API Key -->
-  <div class="api-card">
-    <label for="apiKey">Anthropic API Key</label>
-    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" />
-    <span id="apiStatus" class="api-status unset">Not set</span>
-  </div>
+<div class="container">
 
   <!-- Upload zone -->
   <div class="upload-zone" id="uploadZone">
@@ -335,29 +299,22 @@
 <div id="toast"></div>
 
 <script>
-/* ─────────────────────────────────────────────
-   State
-───────────────────────────────────────────── */
-const receipts   = [];   // { id, file, dataUrl, name, date, total, category, items, raw }
-let   activeTab  = 'All';
+/* ── State ── */
+const receipts  = [];
+let   activeTab = 'All';
 
-/* ─────────────────────────────────────────────
-   API Key handling
-───────────────────────────────────────────── */
-const apiKeyInput  = document.getElementById('apiKey');
-const apiStatus    = document.getElementById('apiStatus');
+/* ── Tesseract worker (created once, reused) ── */
+let worker = null;
 
-apiKeyInput.addEventListener('input', () => {
-  const v = apiKeyInput.value.trim();
-  apiStatus.textContent = v ? 'Set ✓' : 'Not set';
-  apiStatus.className   = 'api-status ' + (v ? 'set' : 'unset');
-});
+async function getWorker() {
+  if (worker) return worker;
+  worker = await Tesseract.createWorker('eng', 1, {
+    logger: () => {}   // silence verbose logs
+  });
+  return worker;
+}
 
-function getApiKey() { return apiKeyInput.value.trim(); }
-
-/* ─────────────────────────────────────────────
-   Upload zone drag-and-drop
-───────────────────────────────────────────── */
+/* ── Upload zone ── */
 const uploadZone = document.getElementById('uploadZone');
 const fileInput  = document.getElementById('fileInput');
 
@@ -368,18 +325,11 @@ uploadZone.addEventListener('drop', e => {
   uploadZone.classList.remove('drag-over');
   handleFiles([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
 });
+fileInput.addEventListener('change', () => { handleFiles([...fileInput.files]); fileInput.value = ''; });
 
-fileInput.addEventListener('change', () => {
-  handleFiles([...fileInput.files]);
-  fileInput.value = '';
-});
-
-/* ─────────────────────────────────────────────
-   File handling
-───────────────────────────────────────────── */
+/* ── File handling ── */
 function handleFiles(files) {
   if (!files.length) return;
-  if (!getApiKey()) { showToast('Please enter your Anthropic API key first', 'error'); return; }
   files.forEach(processFile);
 }
 
@@ -387,17 +337,24 @@ async function processFile(file) {
   const id      = Date.now() + Math.random();
   const dataUrl = await readFileAsDataUrl(file);
 
-  // Add queue item
   addQueueItem(id, file.name, dataUrl);
 
   try {
-    const data = await extractReceiptData(dataUrl, file.type);
-    const receipt = { id, file, dataUrl, ...data };
+    const w = await getWorker();
+
+    // Update progress as OCR runs
+    const { data } = await w.recognize(dataUrl, {}, {
+      // Tesseract v5 fires a logger callback set at worker creation;
+      // we track it via a separate recognize call with progress option
+    });
+
+    const text    = data.text || '';
+    const receipt = { id, file, dataUrl, ...parseReceiptText(text), raw: text };
     receipts.push(receipt);
     updateQueueItem(id, 'done');
     renderAll();
   } catch (err) {
-    updateQueueItem(id, 'error', err.message || 'Failed to process');
+    updateQueueItem(id, 'error', err.message || 'OCR failed');
     showToast(`Error: ${err.message}`, 'error');
   }
 }
@@ -411,90 +368,115 @@ function readFileAsDataUrl(file) {
   });
 }
 
-/* ─────────────────────────────────────────────
-   Claude API call
-───────────────────────────────────────────── */
-async function extractReceiptData(dataUrl, mimeType) {
-  const base64 = dataUrl.split(',')[1];
-  const media  = mimeType || 'image/jpeg';
-
-  const prompt = `You are a receipt data extractor. Analyse this receipt image and return ONLY a JSON object with these exact keys:
-{
-  "name": "store or merchant name (string)",
-  "date": "date in YYYY-MM-DD format or empty string if not found",
-  "total": "grand total as a number with 2 decimal places (e.g. 42.50) or 0 if not found",
-  "currency": "currency symbol or code (e.g. £, $, EUR)",
-  "category": "ONE of: Groceries, Dining, Transport, Shopping, Health, Entertainment, Utilities, Travel, Other",
-  "items": ["list", "of", "purchased", "item", "names", "max 8"]
-}
-
-Category guidance:
-- Groceries: supermarkets, food stores, farmers markets
-- Dining: restaurants, cafes, takeaways, bars
-- Transport: petrol/gas, parking, taxis, trains, buses
-- Shopping: clothing, electronics, homeware, general retail
-- Health: pharmacy, medical, gym, dental
-- Entertainment: cinema, events, streaming, games
-- Utilities: electricity, gas, water, phone, internet
-- Travel: hotels, flights, car hire
-
-Return ONLY valid JSON, no markdown fences, no explanation.`;
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type':    'application/json',
-      'x-api-key':       getApiKey(),
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model:      'claude-opus-4-6',
-      max_tokens: 1024,
-      thinking:   { type: 'adaptive' },
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: media, data: base64 } },
-          { type: 'text',  text: prompt }
-        ]
-      }]
-    })
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${response.status}`);
-  }
-
-  const msg = await response.json();
-  // Find the text block (skip thinking blocks)
-  const textBlock = msg.content.find(b => b.type === 'text');
-  if (!textBlock) throw new Error('No text response from Claude');
-
-  let parsed;
-  try {
-    // Strip any accidental markdown fences
-    const cleaned = textBlock.text.replace(/```json\s*/gi,'').replace(/```/g,'').trim();
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error('Could not parse receipt data from Claude response');
-  }
+/* ── Receipt text parser ── */
+function parseReceiptText(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
   return {
-    name:     parsed.name     || 'Unknown',
-    date:     parsed.date     || '',
-    total:    parseFloat(parsed.total) || 0,
-    currency: parsed.currency || '$',
-    category: parsed.category || 'Other',
-    items:    Array.isArray(parsed.items) ? parsed.items : [],
-    raw:      textBlock.text,
+    name:     extractMerchant(lines),
+    date:     extractDate(text),
+    total:    extractTotal(text),
+    currency: extractCurrency(text),
+    category: guessCategory(text),
+    items:    extractItems(lines),
   };
 }
 
-/* ─────────────────────────────────────────────
-   Queue UI
-───────────────────────────────────────────── */
+function extractMerchant(lines) {
+  // The merchant is usually in the first 1-3 non-trivial lines
+  for (const line of lines.slice(0, 5)) {
+    // Skip lines that look like addresses, dates, or phone numbers
+    if (/^\d[\d\s\-\/]+$/.test(line)) continue;        // all numbers
+    if (/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(line)) continue; // date
+    if (/tel|phone|fax|www\.|http/i.test(line)) continue;
+    if (line.length >= 3) return toTitleCase(line);
+  }
+  return 'Unknown';
+}
+
+function extractDate(text) {
+  // Various date formats
+  const patterns = [
+    /\b(\d{4}[-\/]\d{2}[-\/]\d{2})\b/,                         // 2024-03-15
+    /\b(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})\b/,                     // 15/03/2024 or 3/15/2024
+    /\b(\d{1,2}[-\s](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-\s]\d{4})\b/i,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) {
+      // Try to normalise to YYYY-MM-DD
+      const raw = m[1];
+      const d   = new Date(raw);
+      if (!isNaN(d)) return d.toISOString().slice(0, 10);
+      return raw;
+    }
+  }
+  return '';
+}
+
+function extractTotal(text) {
+  // Look for lines like "Total 42.50" or "GRAND TOTAL: £42.50"
+  const patterns = [
+    /(?:grand\s+)?total[:\s*]*[\$£€]?\s*(\d+[.,]\d{2})/i,
+    /(?:amount\s+due|amount\s+paid|balance\s+due)[:\s]*[\$£€]?\s*(\d+[.,]\d{2})/i,
+    /[\$£€]\s*(\d+[.,]\d{2})\s*$/m,   // currency symbol at end of line
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) return parseFloat(m[1].replace(',', '.')) || 0;
+  }
+  // Fallback: find the largest monetary amount in the text
+  const amounts = [...text.matchAll(/[\$£€]?\s*(\d+\.\d{2})/g)]
+    .map(m => parseFloat(m[1])).filter(n => n > 0);
+  return amounts.length ? Math.max(...amounts) : 0;
+}
+
+function extractCurrency(text) {
+  if (/£/.test(text)) return '£';
+  if (/€/.test(text)) return '€';
+  if (/¥/.test(text)) return '¥';
+  return '$';
+}
+
+function guessCategory(text) {
+  const t = text.toLowerCase();
+  if (/supermarket|grocery|grocer|produce|market|tesco|sainsbury|walmart|kroger|aldi|lidl|costco/i.test(t)) return 'Groceries';
+  if (/restaurant|cafe|coffee|bistro|diner|pizza|burger|sushi|mcdonald|kfc|subway|starbuck/i.test(t)) return 'Dining';
+  if (/petrol|gasoline|fuel|parking|taxi|uber|lyft|train|bus|tube|transit|shell|bp\b|esso/i.test(t)) return 'Transport';
+  if (/pharmacy|chemist|boots|cvs|walgreen|dental|clinic|hospital|doctor|medical|gym|fitness/i.test(t)) return 'Health';
+  if (/electric|electricity|gas bill|water bill|internet|broadband|phone bill|utility/i.test(t)) return 'Utilities';
+  if (/hotel|motel|airbnb|hostel|flight|airline|airways|car hire|car rental/i.test(t)) return 'Travel';
+  if (/cinema|theatre|theater|netflix|spotify|ticket|concert|museum|game|steam/i.test(t)) return 'Entertainment';
+  if (/amazon|ebay|clothing|clothes|shoes|electronics|apple store|argos|ikea|homeware/i.test(t)) return 'Shopping';
+  return 'Other';
+}
+
+function extractItems(lines) {
+  const items = [];
+  // Lines that look like "Item name  4.99" — text followed by a price
+  const itemPat = /^(.+?)\s+\d+[.,]\d{2}\s*$/;
+  // Skip lines containing totals/tax/subtotal keywords
+  const skipPat = /total|subtotal|tax|vat|discount|change|cash|card|paid|balance|amount/i;
+
+  for (const line of lines) {
+    if (skipPat.test(line)) continue;
+    const m = line.match(itemPat);
+    if (m) {
+      const name = m[1].trim();
+      if (name.length >= 2 && name.length <= 60) {
+        items.push(toTitleCase(name));
+        if (items.length >= 8) break;
+      }
+    }
+  }
+  return items;
+}
+
+function toTitleCase(str) {
+  return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/* ── Queue UI ── */
 const queueSection = document.getElementById('queue-section');
 
 function addQueueItem(id, filename, dataUrl) {
@@ -505,7 +487,8 @@ function addQueueItem(id, filename, dataUrl) {
     <img class="queue-thumb" src="${dataUrl}" alt="" />
     <div class="queue-info">
       <div class="queue-name">${escHtml(filename)}</div>
-      <div class="queue-status">Analysing with Claude…</div>
+      <div class="queue-status">Running OCR…</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:30%"></div></div>
     </div>
     <div class="spinner"></div>`;
   queueSection.appendChild(el);
@@ -514,8 +497,11 @@ function addQueueItem(id, filename, dataUrl) {
 function updateQueueItem(id, status, message) {
   const el = document.getElementById(`q-${id}`);
   if (!el) return;
-  const spinner = el.querySelector('.spinner');
-  const info    = el.querySelector('.queue-status');
+  const spinner  = el.querySelector('.spinner');
+  const info     = el.querySelector('.queue-status');
+  const progress = el.querySelector('.progress-bar');
+
+  if (progress) progress.remove();
 
   if (status === 'done') {
     spinner.outerHTML = `<span class="status-done">✅</span>`;
@@ -525,42 +511,37 @@ function updateQueueItem(id, status, message) {
     info.textContent  = message || 'Error';
   }
 
-  // Fade out and remove after 3 s
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .4s'; }, 3000);
   setTimeout(() => el.remove(), 3400);
 }
 
-/* ─────────────────────────────────────────────
-   Render table + tabs
-───────────────────────────────────────────── */
-const toolbar   = document.getElementById('toolbar');
-const catTabs   = document.getElementById('catTabs');
-const tableWrap = document.getElementById('tableWrap');
-const tableBody = document.getElementById('tableBody');
-const emptyState= document.getElementById('emptyState');
-const statsEl   = document.getElementById('stats');
+/* ── Render ── */
+const toolbar    = document.getElementById('toolbar');
+const catTabs    = document.getElementById('catTabs');
+const tableWrap  = document.getElementById('tableWrap');
+const tableBody  = document.getElementById('tableBody');
+const emptyState = document.getElementById('emptyState');
+const statsEl    = document.getElementById('stats');
 
 function renderAll() {
-  if (!receipts.length) { toolbar.style.display='none'; catTabs.style.display='none'; tableWrap.style.display='none'; return; }
-
+  if (!receipts.length) {
+    toolbar.style.display = catTabs.style.display = tableWrap.style.display = 'none';
+    return;
+  }
   toolbar.style.display   = 'flex';
   catTabs.style.display   = 'flex';
   tableWrap.style.display = 'block';
-
-  renderTabs();
-  renderTable();
-  renderStats();
+  renderTabs(); renderTable(); renderStats();
 }
 
 function renderTabs() {
   const counts = { All: receipts.length };
-  receipts.forEach(r => { counts[r.category] = (counts[r.category]||0) + 1; });
-
+  receipts.forEach(r => { counts[r.category] = (counts[r.category] || 0) + 1; });
   catTabs.innerHTML = '';
   ['All', ...Object.keys(counts).filter(k => k !== 'All').sort()].forEach(cat => {
     const btn = document.createElement('button');
     btn.className = 'cat-tab' + (cat === activeTab ? ' active' : '');
-    btn.innerHTML = `${catIcon(cat)} ${escHtml(cat)} <span class="cat-badge">${counts[cat]||0}</span>`;
+    btn.innerHTML = `${catIcon(cat)} ${escHtml(cat)} <span class="cat-badge">${counts[cat] || 0}</span>`;
     btn.onclick = () => { activeTab = cat; renderAll(); };
     catTabs.appendChild(btn);
   });
@@ -568,14 +549,8 @@ function renderTabs() {
 
 function renderTable() {
   const visible = activeTab === 'All' ? receipts : receipts.filter(r => r.category === activeTab);
-
-  if (!visible.length) {
-    tableBody.innerHTML = '';
-    emptyState.style.display = 'block';
-    return;
-  }
+  if (!visible.length) { tableBody.innerHTML = ''; emptyState.style.display = 'block'; return; }
   emptyState.style.display = 'none';
-
   tableBody.innerHTML = visible.map(r => `
     <tr>
       <td class="thumb-cell"><img src="${r.dataUrl}" alt="receipt" /></td>
@@ -591,22 +566,18 @@ function renderTable() {
 function renderStats() {
   const total = receipts.reduce((s, r) => s + r.total, 0);
   const cats  = [...new Set(receipts.map(r => r.category))].length;
-  statsEl.innerHTML = `<strong>${receipts.length}</strong> receipt${receipts.length!==1?'s':''} &nbsp;·&nbsp; <strong>${cats}</strong> categor${cats!==1?'ies':'y'} &nbsp;·&nbsp; Total: <strong>$${total.toFixed(2)}</strong>`;
+  statsEl.innerHTML = `<strong>${receipts.length}</strong> receipt${receipts.length !== 1 ? 's' : ''} &nbsp;·&nbsp; <strong>${cats}</strong> categor${cats !== 1 ? 'ies' : 'y'} &nbsp;·&nbsp; Total: <strong>${total.toFixed(2)}</strong>`;
 }
 
-/* ─────────────────────────────────────────────
-   Remove receipt
-───────────────────────────────────────────── */
+/* ── Remove ── */
 window.removeReceipt = function(id) {
   const idx = receipts.findIndex(r => r.id === id);
-  if (idx !== -1) { receipts.splice(idx, 1); }
+  if (idx !== -1) receipts.splice(idx, 1);
   if (activeTab !== 'All' && !receipts.find(r => r.category === activeTab)) activeTab = 'All';
   renderAll();
 };
 
-/* ─────────────────────────────────────────────
-   Clear all
-───────────────────────────────────────────── */
+/* ── Clear all ── */
 document.getElementById('clearBtn').addEventListener('click', () => {
   if (!confirm('Remove all receipts?')) return;
   receipts.length = 0;
@@ -614,55 +585,33 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   renderAll();
 });
 
-/* ─────────────────────────────────────────────
-   CSV Export
-───────────────────────────────────────────── */
+/* ── CSV Export ── */
 document.getElementById('exportBtn').addEventListener('click', () => {
   if (!receipts.length) { showToast('No receipts to export', 'error'); return; }
-
   const rows = [
     ['Merchant', 'Date', 'Category', 'Currency', 'Total', 'Items', 'Filename'],
-    ...receipts.map(r => [
-      r.name,
-      r.date,
-      r.category,
-      r.currency,
-      r.total.toFixed(2),
-      r.items.join(' | '),
-      r.file.name,
-    ])
+    ...receipts.map(r => [r.name, r.date, r.category, r.currency, r.total.toFixed(2), r.items.join(' | '), r.file.name])
   ];
-
-  const csv = rows.map(row =>
-    row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-  ).join('\r\n');
-
+  const csv  = rows.map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `receipts-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
+  a.href = url; a.download = `receipts-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   URL.revokeObjectURL(url);
-  showToast(`Exported ${receipts.length} receipt${receipts.length!==1?'s':''}`, 'success');
+  showToast(`Exported ${receipts.length} receipt${receipts.length !== 1 ? 's' : ''}`, 'success');
 });
 
-/* ─────────────────────────────────────────────
-   Helpers
-───────────────────────────────────────────── */
+/* ── Helpers ── */
 function catIcon(cat) {
   return ({ Groceries:'🛒', Dining:'🍽', Transport:'🚗', Shopping:'🛍', Health:'💊', Entertainment:'🎬', Utilities:'💡', Travel:'✈', Other:'📄' })[cat] || '📄';
 }
-
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 let toastTimer;
-function showToast(msg, type='') {
+function showToast(msg, type = '') {
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className   = 'show' + (type ? ' ' + type : '');
+  t.textContent = msg; t.className = 'show' + (type ? ' ' + type : '');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = ''; }, 3200);
 }
